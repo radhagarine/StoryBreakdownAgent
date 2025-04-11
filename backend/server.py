@@ -16,6 +16,21 @@ import io
 import re
 from datetime import datetime
 
+# Additional imports for file format handling
+import PyPDF2
+import docx
+import pandas as pd
+import csv
+import spacy
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
+from nltk.tokenize import sent_tokenize
+from nltk.tag import pos_tag
+from nltk.chunk import ne_chunk
+
+# Load spaCy model
+nlp = spacy.load('en_core_web_sm')
+
 # Load environment variables
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
