@@ -284,7 +284,18 @@ def generate_character_prompt(character):
         traits_text = ", ".join(character["traits"])
         prompt += f"Character traits include: {traits_text}. "
     
-    prompt += "The image should have professional cinematic lighting, high detail, photorealistic style with dramatic composition."
+    # Add emotional context if available
+    if character.get("emotion"):
+        prompt += f"Their expression shows {character['emotion']}. "
+    
+    # Add clothing context if available
+    if character.get("clothing"):
+        prompt += f"Dressed in {character['clothing']}. "
+    
+    # Add enhanced visual style guidance
+    prompt += "The image should have professional cinematic lighting with rim lighting on the subject, "
+    prompt += "shallow depth of field with background bokeh, high detail, photorealistic style with dramatic composition. "
+    prompt += "The portrait should capture the character's essence with subtle facial nuances, appropriate for a movie poster or character study."
     
     return prompt
 
@@ -298,18 +309,61 @@ def generate_scene_prompt(scene):
         prompt += f"Scene description: {short_desc}. "
     
     if scene.get("time_of_day"):
-        prompt += f"Time of day: {scene['time_of_day']}. "
+        # Enhanced time of day descriptions
+        time_desc = scene.get("time_of_day").lower()
+        if "morning" in time_desc:
+            prompt += f"Time of day: Early morning with warm golden sunlight casting long shadows. "
+        elif "noon" in time_desc or "day" in time_desc:
+            prompt += f"Time of day: Bright midday with harsh overhead lighting and short shadows. "
+        elif "afternoon" in time_desc:
+            prompt += f"Time of day: Late afternoon with warm, amber lighting and medium-length shadows. "
+        elif "evening" in time_desc:
+            prompt += f"Time of day: Early evening with soft, diffused golden hour lighting. "
+        elif "night" in time_desc:
+            prompt += f"Time of day: Nighttime with cool blue moonlight or artificial lighting creating strong contrast. "
+        else:
+            prompt += f"Time of day: {scene['time_of_day']}. "
     
     if scene.get("location"):
         prompt += f"Location: {scene['location']}. "
     
-    prompt += "The image should have professional cinematic lighting, film grain texture, dramatic composition with depth of field, high detail, photorealistic style."
+    # Add weather/atmosphere if mentioned in the description
+    if scene.get("description"):
+        desc_lower = scene["description"].lower()
+        if any(word in desc_lower for word in ["rain", "raining", "storm", "thunder"]):
+            prompt += "The scene has rainy weather with wet surfaces reflecting light. "
+        elif any(word in desc_lower for word in ["snow", "snowing", "winter", "cold"]):
+            prompt += "The scene has snowy conditions with a cold, blue-tinted color palette. "
+        elif any(word in desc_lower for word in ["fog", "foggy", "mist", "misty"]):
+            prompt += "The scene has fog or mist creating an atmospheric, diffused lighting effect. "
+    
+    # Add enhanced visual style guidance
+    prompt += "The image should have professional cinematic lighting with motivated light sources, "
+    prompt += "film grain texture for authenticity, dramatic composition with proper depth of field following the rule of thirds, "
+    prompt += "high detail in the focal points with atmospheric perspective, photorealistic style with color grading appropriate for the scene's mood."
     
     return prompt
 
 def generate_shot_prompt(shot, related_scene):
     """Generate a detailed prompt for AI image generation of a specific shot"""
-    prompt = f"A {shot.get('camera_angle', 'cinematic')} shot from a movie scene. "
+    # Enhanced camera angle descriptions
+    camera_angle = shot.get('camera_angle', '').lower()
+    if "wide" in camera_angle:
+        prompt = "A wide establishing shot showing the full scene with emphasis on the environment and spatial relationships. "
+    elif "close up" in camera_angle or "closeup" in camera_angle:
+        prompt = "An intimate close-up shot focusing on facial expressions or important details with shallow depth of field. "
+    elif "medium" in camera_angle:
+        prompt = "A medium shot framing characters from approximately waist up, balanced to show both facial expressions and body language. "
+    elif "overhead" in camera_angle:
+        prompt = "A dramatic overhead shot looking directly down on the scene, creating a voyeuristic or omniscient perspective. "
+    elif "low angle" in camera_angle:
+        prompt = "A dynamic low-angle shot looking upward at the subject, creating a sense of power or dominance. "
+    elif "pov" in camera_angle:
+        prompt = "A subjective point-of-view shot from a character's perspective, slightly unsteady with natural motion. "
+    elif "tracking" in camera_angle:
+        prompt = "A smooth tracking shot following the subject in motion, with slight motion blur on the background. "
+    else:
+        prompt = f"A {shot.get('camera_angle', 'cinematic')} shot from a movie scene. "
     
     if shot.get("description"):
         prompt += f"Shot description: {shot['description']}. "
@@ -320,7 +374,31 @@ def generate_shot_prompt(shot, related_scene):
     if related_scene.get("time_of_day"):
         prompt += f"Time of day: {related_scene['time_of_day']}. "
     
-    prompt += "The image should have professional cinematic lighting, film grain texture, dramatic composition with appropriate depth of field, high detail, photorealistic style."
+    # Add mood/tone analysis based on description
+    if shot.get("description"):
+        desc_lower = shot["description"].lower()
+        
+        # Analyze for tension/suspense
+        if any(word in desc_lower for word in ["tense", "suspense", "fear", "scary", "afraid", "nervous"]):
+            prompt += "The shot has a suspenseful mood with high contrast lighting, shadows, and uneasy composition. "
+        
+        # Analyze for action
+        elif any(word in desc_lower for word in ["action", "fight", "chase", "run", "explosion", "fast"]):
+            prompt += "The shot captures dynamic action with motion blur, energetic composition, and heightened contrast. "
+        
+        # Analyze for romance/intimacy
+        elif any(word in desc_lower for word in ["love", "kiss", "embrace", "intimate", "tender", "romance"]):
+            prompt += "The shot has romantic mood with soft, flattering lighting, warm color palette, and intimate framing. "
+        
+        # Analyze for sadness/melancholy
+        elif any(word in desc_lower for word in ["sad", "grief", "cry", "tears", "mourn", "sorrow"]):
+            prompt += "The shot has a melancholic mood with desaturated colors, soft lighting, and somber composition. "
+    
+    # Add enhanced visual style guidance
+    prompt += "The image should have professional cinematic lighting with motivated light sources and appropriate shadows, "
+    prompt += "film grain texture for authentic cinematic feel, dramatic composition following cinematography principles, "
+    prompt += "appropriate depth of field for the shot type, high detail in the focal points, photorealistic style with "
+    prompt += "color grading that enhances the emotional tone of the scene."
     
     return prompt
 
