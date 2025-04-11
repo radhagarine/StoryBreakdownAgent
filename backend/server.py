@@ -437,6 +437,11 @@ async def get_character(character_id: str):
     character = await db.characters.find_one({"id": character_id})
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
+    
+    # Remove _id field which is not JSON serializable
+    if "_id" in character:
+        del character["_id"]
+        
     return jsonable_encoder(character)
 
 @app.get("/api/scenes/{scene_id}")
@@ -445,6 +450,11 @@ async def get_scene(scene_id: str):
     scene = await db.scenes.find_one({"id": scene_id})
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # Remove _id field which is not JSON serializable
+    if "_id" in scene:
+        del scene["_id"]
+        
     return jsonable_encoder(scene)
 
 @app.get("/api/shots/{shot_id}")
@@ -453,6 +463,11 @@ async def get_shot(shot_id: str):
     shot = await db.shots.find_one({"id": shot_id})
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
+    
+    # Remove _id field which is not JSON serializable
+    if "_id" in shot:
+        del shot["_id"]
+        
     return jsonable_encoder(shot)
 
 @app.put("/api/characters/{character_id}")
