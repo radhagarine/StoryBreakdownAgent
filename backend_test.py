@@ -1,128 +1,131 @@
 import requests
 import os
+import pytest
 from pathlib import Path
-import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Get the backend URL from environment or use default
+BACKEND_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001')
 
-class ScriptBreakdownAPITester:
-    def __init__(self):
-        self.base_url = "https://ecd1d434-35c7-4302-9091-26f6bdc8e2ab.preview.emergentagent.com/api"
+class TestScriptBreakdownAPI:
+    def setup_method(self):
+        """Setup for each test method"""
+        self.api_url = BACKEND_URL
+        self.test_script_path = Path('/app/test_script.txt')
         self.script_id = None
-        self.test_script_path = "/app/test_script.txt"
-        self.tests_run = 0
-        self.tests_passed = 0
-
-    def run_test(self, name, test_func):
-        """Run a single test with logging"""
-        self.tests_run += 1
-        logger.info(f"\n🔍 Testing: {name}")
-        try:
-            result = test_func()
-            if result:
-                self.tests_passed += 1
-                logger.info(f"✅ Passed: {name}")
-            else:
-                logger.error(f"❌ Failed: {name}")
-            return result
-        except Exception as e:
-            logger.error(f"❌ Failed: {name} - Error: {str(e)}")
-            return False
+        
+        # Ensure test script exists
+        assert self.test_script_path.exists(), "Test script file not found"
 
     def test_api_health(self):
         """Test API health endpoint"""
-        response = requests.get(f"{self.base_url}")
-        return response.status_code == 200 and response.json()["status"] == "active"
+        response = requests.get(f"{self.api_url}/api")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Script Breakdown API"
+        assert data["status"] == "active"
+        print("✅ API health check passed")
 
-    def test_upload_script(self):
-        """Test script upload endpoint"""
-        with open(self.test_script_path, 'rb') as f:
-            files = {'file': ('test_script.txt', f)}
-            data = {'title': 'Test Script'}
-            response = requests.post(f"{self.base_url}/scripts/upload", files=files, data=data)
-            
-            if response.status_code == 200:
-                result = response.json()
-                self.script_id = result.get('script_id')
-                logger.info(f"Script uploaded with ID: {self.script_id}")
-                logger.info(f"Statistics: {result.get('statistics')}")
-                return True
-            return False
+    def test_script_upload(self):
+        """Test script upload functionality"""
+        # Prepare file upload
+        files = {
+            'file': ('test_script.txt', open(self.test_script_path, 'rb'), 'text/plain')
+        }
+        data = {'title': 'Test Script'}
 
-    def test_get_characters(self):
-        """Test getting characters endpoint"""
-        if not self.script_id:
-            logger.error("No script ID available")
-            return False
-            
-        response = requests.get(f"{self.base_url}/scripts/{self.script_id}/characters")
-        if response.status_code == 200:
-            characters = response.json()
-            logger.info(f"Found {len(characters)} characters")
-            for char in characters:
-                logger.info(f"Character: {char.get('name')}")
-            return len(characters) > 0
-        return False
-
-    def test_get_scenes(self):
-        """Test getting scenes endpoint"""
-        if not self.script_id:
-            logger.error("No script ID available")
-            return False
-            
-        response = requests.get(f"{self.base_url}/scripts/{self.script_id}/scenes")
-        if response.status_code == 200:
-            scenes = response.json()
-            logger.info(f"Found {len(scenes)} scenes")
-            for scene in scenes:
-                logger.info(f"Scene: {scene.get('heading')}")
-            return len(scenes) > 0
-        return False
-
-    def test_character_prompt_generation(self):
-        """Test character prompt generation"""
-        if not self.script_id:
-            logger.error("No script ID available")
-            return False
-            
-        # First get a character ID
-        response = requests.get(f"{self.base_url}/scripts/{self.script_id}/characters")
-        if response.status_code != 200 or not response.json():
-            return False
-            
-        character_id = response.json()[0]['id']
-        response = requests.post(f"{self.base_url}/characters/{character_id}/generate-prompt")
+        # Upload script
+        response = requests.post(
+            f"{self.api_url}/api/scripts/upload",
+            files=files,
+            data=data
+        )
         
-        if response.status_code == 200:
-            prompt = response.json()
-            logger.info(f"Generated prompt for character: {prompt.get('image_prompt')}")
-            return True
-        return False
+        assert response.status_code == 200, f"Upload failed with status {response.status_code}"
+        
+        upload_data = response.json()
+        assert "script_id" in upload_data
+        assert "statistics" in upload_data
+        
+        # Store script_id for subsequent tests
+        self.script_id = upload_data["script_id"]
+        print(f"✅ Script upload successful. Script ID: {self.script_id}")
+        print(f"📊 Statistics: {upload_data['statistics']}")
 
-def main():
-    tester = ScriptBreakdownAPITester()
-    
-    # Run all tests
-    tests = [
-        ("API Health", tester.test_api_health),
-        ("Script Upload", tester.test_upload_script),
-        ("Get Characters", tester.test_get_characters),
-        ("Get Scenes", tester.test_get_scenes),
-        ("Character Prompt Generation", tester.test_character_prompt_generation)
-    ]
-    
-    for test_name, test_func in tests:
-        tester.run_test(test_name, test_func)
-    
-    # Print summary
-    logger.info(f"\n📊 Test Summary:")
-    logger.info(f"Total Tests: {tester.tests_run}")
-    logger.info(f"Passed: {tester.tests_passed}")
-    logger.info(f"Failed: {tester.tests_run - tester.tests_passed}")
-    
-    return 0 if tester.tests_passed == tester.tests_run else 1
+    def test_character_extraction(self):
+        """Test character extraction"""
+        assert self.script_id, "Script ID not set - run upload test first"
+        
+        response = requests.get(f"{self.api_url}/api/scripts/{self.script_id}/characters")
+        assert response.status_code == 200
+        
+        characters = response.json()
+        character_names = [char["name"] for char in characters]
+        
+        # Check for expected characters
+        assert "SARAH" in character_names, "SARAH not found in characters"
+        assert "JAMES" in character_names, "JAMES not found in characters"
+        
+        print("✅ Character extraction test passed")
+        print(f"📝 Found characters: {', '.join(character_names)}")
+
+    def test_scene_extraction(self):
+        """Test scene extraction"""
+        assert self.script_id, "Script ID not set - run upload test first"
+        
+        response = requests.get(f"{self.api_url}/api/scripts/{self.script_id}/scenes")
+        assert response.status_code == 200
+        
+        scenes = response.json()
+        scene_headings = [scene["heading"] for scene in scenes]
+        
+        # Check for expected scenes
+        expected_scenes = [
+            "INT. COFFEE SHOP - MORNING",
+            "EXT. COFFEE SHOP - MOMENTS LATER",
+            "INT. COFFEE SHOP - FLASHBACK"
+        ]
+        
+        for expected in expected_scenes:
+            assert any(expected in heading for heading in scene_headings), f"Scene '{expected}' not found"
+        
+        print("✅ Scene extraction test passed")
+        print(f"📝 Found scenes: {', '.join(scene_headings)}")
+
+    def test_image_prompt_generation(self):
+        """Test image prompt generation for a character"""
+        assert self.script_id, "Script ID not set - run upload test first"
+        
+        # Get characters
+        response = requests.get(f"{self.api_url}/api/scripts/{self.script_id}/characters")
+        assert response.status_code == 200
+        
+        characters = response.json()
+        assert len(characters) > 0, "No characters found"
+        
+        # Generate prompt for first character
+        character = characters[0]
+        response = requests.post(f"{self.api_url}/api/characters/{character['id']}/generate-prompt")
+        assert response.status_code == 200
+        
+        prompt_data = response.json()
+        assert "image_prompt" in prompt_data
+        assert prompt_data["image_prompt"], "Empty prompt generated"
+        
+        print("✅ Image prompt generation test passed")
+        print(f"🎭 Character: {character['name']}")
+        print(f"🖼️ Generated prompt: {prompt_data['image_prompt']}")
 
 if __name__ == "__main__":
-    exit(main())
+    # Run tests
+    test = TestScriptBreakdownAPI()
+    test.setup_method()
+    
+    try:
+        test.test_api_health()
+        test.test_script_upload()
+        test.test_character_extraction()
+        test.test_scene_extraction()
+        test.test_image_prompt_generation()
+        print("\n✨ All tests passed successfully!")
+    except Exception as e:
+        print(f"\n❌ Tests failed: {str(e)}")
