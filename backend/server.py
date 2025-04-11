@@ -343,13 +343,20 @@ async def upload_script(
         # Determine file format
         file_format = file.filename.split('.')[-1].lower()
         
-        # For simplicity, we're treating all formats as text in this MVP
-        # In a production app, we'd use specialized libraries for each format
-        script_content = content.decode('utf-8')
-        
         # Use filename as title if not provided
         if not title:
             title = file.filename.split('.')[0]
+        
+        # Process file based on format
+        if file_format == 'pdf':
+            script_content = extract_text_from_pdf(content)
+        elif file_format in ['doc', 'docx']:
+            script_content = extract_text_from_docx(content)
+        elif file_format == 'csv':
+            script_content = extract_text_from_csv(content)
+        else:
+            # Default to treating as text
+            script_content = content.decode('utf-8')
         
         # Create script record
         script = {
@@ -368,7 +375,7 @@ async def upload_script(
         parse_results = await parse_script(script_content, script["id"])
         
         return {
-            "message": "Script uploaded and processed successfully",
+            "message": f"Script uploaded and processed successfully (format: {file_format})",
             "script_id": script["id"],
             "title": script["title"],
             "statistics": parse_results
@@ -376,6 +383,46 @@ async def upload_script(
     except Exception as e:
         logger.error(f"Error processing script: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process script: {str(e)}")
+
+def extract_text_from_pdf(content):
+    """Extract text from PDF file"""
+    try:
+        with io.BytesIO(content) as pdf_file:
+            reader = PyPDF2.PdfReader(pdf_file)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        logger.error(f"Error extracting text from PDF: {str(e)}")
+        raise ValueError(f"Failed to extract text from PDF: {str(e)}")
+
+def extract_text_from_docx(content):
+    """Extract text from DOCX file"""
+    try:
+        with io.BytesIO(content) as docx_file:
+            doc = docx.Document(docx_file)
+            text = ""
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+        return text
+    except Exception as e:
+        logger.error(f"Error extracting text from DOCX: {str(e)}")
+        raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
+
+def extract_text_from_csv(content):
+    """Extract text from CSV file (assuming it's a screenplay in CSV format)"""
+    try:
+        with io.StringIO(content.decode('utf-8')) as csv_file:
+            reader = csv.reader(csv_file)
+            text = ""
+            for row in reader:
+                # Join row elements with spaces
+                text += " ".join(row) + "\n"
+        return text
+    except Exception as e:
+        logger.error(f"Error extracting text from CSV: {str(e)}")
+        raise ValueError(f"Failed to extract text from CSV: {str(e)}")
 
 @app.get("/api/scripts")
 async def get_scripts():
