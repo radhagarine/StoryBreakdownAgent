@@ -379,20 +379,57 @@ async def get_script(script_id: str):
 @app.get("/api/scripts/{script_id}/characters")
 async def get_script_characters(script_id: str):
     """Get all characters from a script"""
-    characters = await db.characters.find({"script_id": script_id}).to_list(length=100)
-    return jsonable_encoder(characters)
+    try:
+        # Convert MongoDB cursor to list of dictionaries
+        characters = []
+        async for char in db.characters.find({"script_id": script_id}):
+            # Ensure _id is not included in the response
+            if "_id" in char:
+                del char["_id"]
+            characters.append(char)
+        
+        logger.info(f"Retrieved {len(characters)} characters for script {script_id}")
+        return jsonable_encoder(characters)
+    except Exception as e:
+        logger.error(f"Error retrieving characters: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve characters: {str(e)}")
 
 @app.get("/api/scripts/{script_id}/scenes")
 async def get_script_scenes(script_id: str):
     """Get all scenes from a script"""
-    scenes = await db.scenes.find({"script_id": script_id}).to_list(length=100)
-    return jsonable_encoder(scenes)
+    try:
+        # Convert MongoDB cursor to list of dictionaries
+        scenes = []
+        async for scene in db.scenes.find({"script_id": script_id}):
+            # Ensure _id is not included in the response
+            if "_id" in scene:
+                del scene["_id"]
+            scenes.append(scene)
+        
+        logger.info(f"Retrieved {len(scenes)} scenes for script {script_id}")
+        return jsonable_encoder(scenes)
+    except Exception as e:
+        logger.error(f"Error retrieving scenes: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve scenes: {str(e)}")
 
 @app.get("/api/scripts/{script_id}/shots")
 async def get_script_shots(script_id: str):
     """Get all shots from a script"""
-    shots = await db.shots.find({"script_id": script_id}).to_list(length=100)
-    return jsonable_encoder(shots)
+    try:
+        # Convert MongoDB cursor to list of dictionaries
+        shots = []
+        async for shot in db.shots.find({"script_id": script_id}):
+            # Ensure _id is not included in the response
+            if "_id" in shot:
+                del shot["_id"]
+            shots.append(shot)
+        
+        logger.info(f"Retrieved {len(shots)} shots for script {script_id}")
+        return jsonable_encoder(shots)
+    except Exception as e:
+        logger.error(f"Error retrieving shots: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve shots: {str(e)}")
+
 
 @app.get("/api/characters/{character_id}")
 async def get_character(character_id: str):
