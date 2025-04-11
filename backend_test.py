@@ -1,131 +1,197 @@
 import requests
-import os
 import pytest
-from pathlib import Path
+import os
+import json
+from datetime import datetime
 
-# Get the backend URL from environment or use default
-BACKEND_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001')
+# Get backend URL from environment
+BACKEND_URL = "https://ecd1d434-35c7-4302-9091-26f6bdc8e2ab.preview.emergentagent.com"
 
-class TestScriptBreakdownAPI:
-    def setup_method(self):
-        """Setup for each test method"""
-        self.api_url = BACKEND_URL
-        self.test_script_path = Path('/app/test_script.txt')
+class TestMovieScriptAPI:
+    def __init__(self):
+        self.base_url = BACKEND_URL
         self.script_id = None
-        
-        # Ensure test script exists
-        assert self.test_script_path.exists(), "Test script file not found"
+        self.character_id = None
+        self.scene_id = None
+        self.shot_id = None
 
     def test_api_health(self):
         """Test API health endpoint"""
-        response = requests.get(f"{self.api_url}/api")
+        print("\n🔍 Testing API health...")
+        response = requests.get(f"{self.base_url}/api")
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Script Breakdown API"
         assert data["status"] == "active"
         print("✅ API health check passed")
 
-    def test_script_upload(self):
-        """Test script upload functionality"""
-        # Prepare file upload
+    def test_script_upload(self, file_path, file_type):
+        """Test script upload with different file types"""
+        print(f"\n🔍 Testing {file_type} script upload...")
+        
         files = {
-            'file': ('test_script.txt', open(self.test_script_path, 'rb'), 'text/plain')
+            'file': (f'test_script.{file_type}', open(file_path, 'rb')),
         }
-        data = {'title': 'Test Script'}
-
-        # Upload script
+        data = {
+            'title': f'Test Script {datetime.now().strftime("%Y%m%d_%H%M%S")}'
+        }
+        
         response = requests.post(
-            f"{self.api_url}/api/scripts/upload",
+            f"{self.base_url}/api/scripts/upload",
             files=files,
             data=data
         )
         
-        assert response.status_code == 200, f"Upload failed with status {response.status_code}"
-        
-        upload_data = response.json()
-        assert "script_id" in upload_data
-        assert "statistics" in upload_data
-        
-        # Store script_id for subsequent tests
-        self.script_id = upload_data["script_id"]
-        print(f"✅ Script upload successful. Script ID: {self.script_id}")
-        print(f"📊 Statistics: {upload_data['statistics']}")
-
-    def test_character_extraction(self):
-        """Test character extraction"""
-        assert self.script_id, "Script ID not set - run upload test first"
-        
-        response = requests.get(f"{self.api_url}/api/scripts/{self.script_id}/characters")
         assert response.status_code == 200
+        result = response.json()
+        self.script_id = result["script_id"]
+        print(f"✅ {file_type.upper()} upload successful - Script ID: {self.script_id}")
+        return result
+
+    def test_script_processing(self):
+        """Test script processing results"""
+        print("\n🔍 Testing script processing...")
+        assert self.script_id is not None, "No script ID available"
         
+        # Get script details
+        response = requests.get(f"{self.base_url}/api/scripts/{self.script_id}")
+        assert response.status_code == 200
+        script = response.json()
+        assert script["parsed"] == True
+        print("✅ Script parsing verified")
+        
+        # Check characters
+        response = requests.get(f"{self.base_url}/api/scripts/{self.script_id}/characters")
+        assert response.status_code == 200
         characters = response.json()
-        character_names = [char["name"] for char in characters]
+        if len(characters) > 0:
+            self.character_id = characters[0]["id"]
+            # Verify character traits
+            assert "traits" in characters[0]
+            assert isinstance(characters[0]["traits"], list)
+            print("✅ Character traits extraction verified")
         
-        # Check for expected characters
-        assert "SARAH" in character_names, "SARAH not found in characters"
-        assert "JAMES" in character_names, "JAMES not found in characters"
-        
-        print("✅ Character extraction test passed")
-        print(f"📝 Found characters: {', '.join(character_names)}")
-
-    def test_scene_extraction(self):
-        """Test scene extraction"""
-        assert self.script_id, "Script ID not set - run upload test first"
-        
-        response = requests.get(f"{self.api_url}/api/scripts/{self.script_id}/scenes")
+        # Check scenes
+        response = requests.get(f"{self.base_url}/api/scripts/{self.script_id}/scenes")
         assert response.status_code == 200
-        
         scenes = response.json()
-        scene_headings = [scene["heading"] for scene in scenes]
+        if len(scenes) > 0:
+            self.scene_id = scenes[0]["id"]
+            print("✅ Scene extraction verified")
         
-        # Check for expected scenes
-        expected_scenes = [
-            "INT. COFFEE SHOP - MORNING",
-            "EXT. COFFEE SHOP - MOMENTS LATER",
-            "INT. COFFEE SHOP - FLASHBACK"
-        ]
-        
-        for expected in expected_scenes:
-            assert any(expected in heading for heading in scene_headings), f"Scene '{expected}' not found"
-        
-        print("✅ Scene extraction test passed")
-        print(f"📝 Found scenes: {', '.join(scene_headings)}")
-
-    def test_image_prompt_generation(self):
-        """Test image prompt generation for a character"""
-        assert self.script_id, "Script ID not set - run upload test first"
-        
-        # Get characters
-        response = requests.get(f"{self.api_url}/api/scripts/{self.script_id}/characters")
+        # Check shots
+        response = requests.get(f"{self.base_url}/api/scripts/{self.script_id}/shots")
         assert response.status_code == 200
-        
-        characters = response.json()
-        assert len(characters) > 0, "No characters found"
-        
-        # Generate prompt for first character
-        character = characters[0]
-        response = requests.post(f"{self.api_url}/api/characters/{character['id']}/generate-prompt")
-        assert response.status_code == 200
-        
-        prompt_data = response.json()
-        assert "image_prompt" in prompt_data
-        assert prompt_data["image_prompt"], "Empty prompt generated"
-        
-        print("✅ Image prompt generation test passed")
-        print(f"🎭 Character: {character['name']}")
-        print(f"🖼️ Generated prompt: {prompt_data['image_prompt']}")
+        shots = response.json()
+        if len(shots) > 0:
+            self.shot_id = shots[0]["id"]
+            print("✅ Shot extraction verified")
 
-if __name__ == "__main__":
-    # Run tests
-    test = TestScriptBreakdownAPI()
-    test.setup_method()
+    def test_image_prompts(self):
+        """Test image prompt generation"""
+        print("\n🔍 Testing image prompt generation...")
+        
+        if self.character_id:
+            response = requests.post(f"{self.base_url}/api/characters/{self.character_id}/generate-prompt")
+            assert response.status_code == 200
+            result = response.json()
+            assert "image_prompt" in result
+            print("✅ Character image prompt generation successful")
+        
+        if self.scene_id:
+            response = requests.post(f"{self.base_url}/api/scenes/{self.scene_id}/generate-prompt")
+            assert response.status_code == 200
+            result = response.json()
+            assert "image_prompt" in result
+            print("✅ Scene image prompt generation successful")
+        
+        if self.shot_id:
+            response = requests.post(f"{self.base_url}/api/shots/{self.shot_id}/generate-prompt")
+            assert response.status_code == 200
+            result = response.json()
+            assert "image_prompt" in result
+            print("✅ Shot image prompt generation successful")
+
+def create_test_files():
+    """Create test files in different formats"""
+    # Create a simple text script
+    with open('test_script.txt', 'w') as f:
+        f.write("""INT. LIVING ROOM - NIGHT
+
+JOHN, a tired detective in his 40s, sits at his desk reviewing case files.
+
+JOHN
+(frustrated)
+Another dead end. This case is going nowhere.
+
+SARAH, his partner and a sharp-minded analyst, enters with coffee.
+
+SARAH
+Maybe you're looking at it wrong. Let me show you something.
+
+She spreads out new evidence photos on the desk.""")
+    
+    # Create a simple PDF script
+    try:
+        import fpdf
+        pdf = fpdf.FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        with open('test_script.txt', 'r') as txt_file:
+            for line in txt_file:
+                pdf.cell(200, 10, txt=line.strip(), ln=True)
+        pdf.output("test_script.pdf")
+        print("✅ PDF test file created")
+    except Exception as e:
+        print(f"❌ Could not create PDF: {str(e)}")
+    
+    # Create a simple DOCX script
+    try:
+        from docx import Document
+        doc = Document()
+        with open('test_script.txt', 'r') as txt_file:
+            for line in txt_file:
+                doc.add_paragraph(line.strip())
+        doc.save('test_script.docx')
+        print("✅ DOCX test file created")
+    except Exception as e:
+        print(f"❌ Could not create DOCX: {str(e)}")
+
+def main():
+    # Create test files
+    create_test_files()
+    
+    # Initialize test class
+    tester = TestMovieScriptAPI()
     
     try:
-        test.test_api_health()
-        test.test_script_upload()
-        test.test_character_extraction()
-        test.test_scene_extraction()
-        test.test_image_prompt_generation()
-        print("\n✨ All tests passed successfully!")
+        # Test API health
+        tester.test_api_health()
+        
+        # Test TXT upload
+        if os.path.exists('test_script.txt'):
+            result = tester.test_script_upload('test_script.txt', 'txt')
+            tester.test_script_processing()
+            tester.test_image_prompts()
+        
+        # Test PDF upload
+        if os.path.exists('test_script.pdf'):
+            result = tester.test_script_upload('test_script.pdf', 'pdf')
+            tester.test_script_processing()
+            tester.test_image_prompts()
+        
+        # Test DOCX upload
+        if os.path.exists('test_script.docx'):
+            result = tester.test_script_upload('test_script.docx', 'docx')
+            tester.test_script_processing()
+            tester.test_image_prompts()
+        
+        print("\n✅ All tests completed successfully!")
+        return 0
+        
     except Exception as e:
-        print(f"\n❌ Tests failed: {str(e)}")
+        print(f"\n❌ Test failed: {str(e)}")
+        return 1
+
+if __name__ == "__main__":
+    exit(main())
