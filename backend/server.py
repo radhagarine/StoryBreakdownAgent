@@ -109,11 +109,17 @@ class ImagePrompt(BaseModel):
 
 async def parse_script(script_content, script_id):
     """
-    Parse a movie script and extract characters, scenes, and shots.
+    Parse a movie script and extract characters, scenes, and shots using NLP techniques.
     """
     logger.info(f"Parsing script {script_id}")
     
     try:
+        # Process the script with spaCy for NLP analysis
+        doc = nlp(script_content[:1000000])  # Limit size to avoid memory issues
+        
+        # Initialize sentiment analyzer
+        sia = SentimentIntensityAnalyzer()
+        
         # Improved regex patterns for script elements
         scene_heading_pattern = r'(INT\.|EXT\.|INT\/EXT\.)\s*(.*?)(?=\n)'
         # Improved character pattern to better catch script character names
@@ -138,6 +144,25 @@ async def parse_script(script_content, script_id):
                 else:
                     description = script_content[match.end():].strip()
                 
+                # Analyze scene sentiment/mood using NLTK
+                if description:
+                    scene_mood = "neutral"
+                    sentiment_scores = sia.polarity_scores(description[:1000])  # Analyze first 1000 chars
+                    if sentiment_scores['compound'] >= 0.25:
+                        scene_mood = "positive"
+                    elif sentiment_scores['compound'] <= -0.25:
+                        scene_mood = "negative"
+                    
+                    # More specific mood detection
+                    if "danger" in description.lower() or "fear" in description.lower():
+                        scene_mood = "tense"
+                    elif "love" in description.lower() or "kiss" in description.lower():
+                        scene_mood = "romantic"
+                    elif "laugh" in description.lower() or "joke" in description.lower():
+                        scene_mood = "comedic"
+                else:
+                    scene_mood = "neutral"
+                
                 # Create scene with UUID
                 scene_id = str(uuid.uuid4())
                 scene = {
@@ -147,6 +172,7 @@ async def parse_script(script_content, script_id):
                     "description": description,
                     "location": location,
                     "time_of_day": time_of_day,
+                    "mood": scene_mood,
                     "characters": [],
                     "script_id": script_id
                 }
@@ -180,22 +206,68 @@ async def parse_script(script_content, script_id):
                 
                 logger.info(f"Processing character: {character_name}")
                 
+                # Find character dialogue - gather all lines for this character
+                dialogue_matches = re.finditer(rf'\n{re.escape(character_name)}\s*(?:\(.*?\))?\n(.*?)(?=\n\n|\n[A-Z][A-Z\s]+(?:\(.*?\))?\n)', script_content, re.DOTALL)
+                
+                dialogue_samples = []
+                for d_match in dialogue_matches:
+                    if d_match.group(1):
+                        dialogue_samples.append(d_match.group(1).strip())
+                
+                # Extract character traits using NLP
+                traits = []
+                appearance = []
+                
+                # Analyze character's dialogue for sentiment/personality traits
+                if dialogue_samples:
+                    combined_dialogue = " ".join(dialogue_samples[:5])  # Use first 5 samples
+                    
+                    # Sentiment analysis for emotional traits
+                    sentiment = sia.polarity_scores(combined_dialogue)
+                    if sentiment['compound'] >= 0.25:
+                        traits.append("optimistic")
+                    elif sentiment['compound'] <= -0.25:
+                        traits.append("pessimistic")
+                    
+                    # Look for descriptive words in surrounding context
+                    char_pos = script_content.find(character_name)
+                    context = script_content[max(0, char_pos-300):min(len(script_content), char_pos+300)]
+                    
+                    # Use spaCy for more accurate description extraction
+                    context_doc = nlp(context)
+                    
+                    # Look for adjectives that might describe the character
+                    for sent in context_doc.sents:
+                        sent_text = sent.text.lower()
+                        if character_name.lower() in sent_text:
+                            for token in sent:
+                                if token.pos_ == "ADJ":
+                                    if len(token.text) > 2:  # Avoid small words
+                                        traits.append(token.text.lower())
+                                # Look for appearance descriptions
+                                if token.pos_ == "NOUN" and any(word in token.text.lower() for word in ["hair", "eyes", "face", "tall", "short", "wearing"]):
+                                    appearance.append(token.text.lower())
+                
                 # Find character descriptions - look for surrounding context
                 char_pos = script_content.find(character_name)
-                surrounding_text = script_content[max(0, char_pos-200):min(len(script_content), char_pos+200)]
+                surrounding_text = script_content[max(0, char_pos-300):min(len(script_content), char_pos+300)]
                 
                 # Look for description in surrounding text
-                description_match = re.search(rf'{character_name},\s*(.*?)(?=\n|\.|,)', surrounding_text)
-                description = description_match.group(1).strip() if description_match else f"Character from the script named {character_name}"
+                description_match = re.search(rf'{character_name}[,\.]?\s*(.*?)(?=\n|\.|,)', surrounding_text)
+                character_desc = description_match.group(1).strip() if description_match else f"Character from the script named {character_name}"
+                
+                # Extract appearance details if available
+                appearance_text = ", ".join(appearance[:3]) if appearance else "Appearance details not specified in script"
                 
                 # Character ID with UUID
                 character_id = str(uuid.uuid4())
                 character = {
                     "id": character_id,
                     "name": character_name,
-                    "description": description,
-                    "appearance": "Appearance details extracted from script context",
-                    "traits": [],
+                    "description": character_desc,
+                    "appearance": appearance_text,
+                    "traits": traits[:5],  # Limit to top 5 traits
+                    "dialogue_samples": dialogue_samples[:3] if dialogue_samples else [],
                     "script_id": script_id
                 }
                 
@@ -221,18 +293,32 @@ async def parse_script(script_content, script_id):
                 logger.error(f"Error processing character {match.group(1) if match.group(1) else 'unknown'}: {str(e)}")
         
         # Extract shots (simplified - in real scripts, shots are more complex)
+        # Enhanced shot detection with camera movement and framing keywords
+        shot_pattern = r'(?:ANGLE ON|CLOSE ON|WIDE SHOT|POV|TRACKING SHOT|DOLLY IN|PAN TO|ZOOM IN|ZOOM OUT|CRANE SHOT)(.*?)(?=\n\n|$)'
+        
         for scene in scenes:
             try:
                 # Look for potential shot descriptions
-                shot_descriptions = re.findall(r'(?:ANGLE ON|CLOSE ON|WIDE SHOT|POV)(.*?)(?=\n\n|$)', scene["description"], re.MULTILINE)
+                shot_descriptions = re.findall(shot_pattern, scene["description"], re.MULTILINE | re.IGNORECASE)
                 
                 for i, shot_desc in enumerate(shot_descriptions):
                     shot_id = str(uuid.uuid4())
+                    
+                    # Analyze shot sentiment/mood
+                    shot_mood = "neutral"
+                    if shot_desc:
+                        sentiment_scores = sia.polarity_scores(shot_desc)
+                        if sentiment_scores['compound'] >= 0.25:
+                            shot_mood = "positive"
+                        elif sentiment_scores['compound'] <= -0.25:
+                            shot_mood = "negative"
+                    
                     shot = {
                         "id": shot_id,
                         "shot_number": f"{scene['scene_number']}-{i+1}",
                         "description": shot_desc.strip(),
                         "camera_angle": extract_camera_angle(shot_desc),
+                        "mood": shot_mood,
                         "scene_id": scene["id"],
                         "script_id": script_id
                     }
