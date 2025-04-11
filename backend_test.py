@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class ScriptBreakdownAPITester:
     def __init__(self):
-        self.base_url = "http://localhost:8001/api"
+        self.base_url = "https://ecd1d434-35c7-4302-9091-26f6bdc8e2ab.preview.emergentagent.com/api"
         self.script_id = None
         self.test_script_path = "/app/test_script.txt"
         self.tests_run = 0
