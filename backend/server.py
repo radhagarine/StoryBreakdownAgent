@@ -98,123 +98,154 @@ async def parse_script(script_content, script_id):
     """
     logger.info(f"Parsing script {script_id}")
     
-    # Basic regex patterns for script elements
-    scene_heading_pattern = r'(INT\.|EXT\.|INT/EXT\.)(.*?)(?=\n)'
-    character_pattern = r'\n([A-Z][A-Z\s]+)(?:\(.*?\))?\n'
-    
-    # Extract scenes
-    scenes = []
-    scene_matches = re.finditer(scene_heading_pattern, script_content, re.MULTILINE)
-    
-    for i, match in enumerate(scene_matches):
-        heading = match.group(0).strip()
-        location = heading.split(' - ')[0] if ' - ' in heading else heading
-        time_of_day = heading.split(' - ')[1] if ' - ' in heading else None
+    try:
+        # Improved regex patterns for script elements
+        scene_heading_pattern = r'(INT\.|EXT\.|INT\/EXT\.)\s*(.*?)(?=\n)'
+        # Improved character pattern to better catch script character names
+        character_pattern = r'\n([A-Z][A-Z\s]+)(?:\s*\(.*?\))?\n'
         
-        # Get content until next scene or end of script
-        next_pos = script_content.find('INT.', match.end())
-        if next_pos == -1:
-            next_pos = script_content.find('EXT.', match.end())
+        # Extract scenes
+        scenes = []
+        scene_matches = list(re.finditer(scene_heading_pattern, script_content, re.MULTILINE))
         
-        if next_pos == -1:
-            description = script_content[match.end():].strip()
-        else:
-            description = script_content[match.end():next_pos].strip()
+        logger.info(f"Found {len(scene_matches)} potential scenes")
         
-        # Create scene
-        scene = {
-            "id": str(uuid.uuid4()),
-            "scene_number": str(i + 1),
-            "heading": heading,
-            "description": description,
-            "location": location,
-            "time_of_day": time_of_day,
-            "characters": [],
-            "script_id": script_id
+        for i, match in enumerate(scene_matches):
+            try:
+                heading = match.group(0).strip()
+                location = heading.split(' - ')[0] if ' - ' in heading else heading
+                time_of_day = heading.split(' - ')[1] if ' - ' in heading else None
+                
+                # Get content until next scene or end of script
+                if i < len(scene_matches) - 1:
+                    next_match = scene_matches[i + 1]
+                    description = script_content[match.end():next_match.start()].strip()
+                else:
+                    description = script_content[match.end():].strip()
+                
+                # Create scene with UUID
+                scene_id = str(uuid.uuid4())
+                scene = {
+                    "id": scene_id,
+                    "scene_number": str(i + 1),
+                    "heading": heading,
+                    "description": description,
+                    "location": location,
+                    "time_of_day": time_of_day,
+                    "characters": [],
+                    "script_id": script_id
+                }
+                
+                # Generate image prompt for the scene
+                scene["image_prompt"] = generate_scene_prompt(scene)
+                
+                scenes.append(scene)
+                
+                # Store in database
+                logger.info(f"Saving scene: {scene['heading']}")
+                result = await db.scenes.insert_one(scene)
+                logger.info(f"Scene saved with ID: {scene_id}")
+                
+            except Exception as e:
+                logger.error(f"Error processing scene {i}: {str(e)}")
+        
+        # Extract characters
+        characters = {}
+        character_matches = list(re.finditer(character_pattern, script_content, re.MULTILINE))
+        
+        logger.info(f"Found {len(character_matches)} potential characters")
+        
+        for match in character_matches:
+            try:
+                character_name = match.group(1).strip()
+                
+                # Skip if it's a scene heading or already processed
+                if character_name in characters or "INT." in character_name or "EXT." in character_name:
+                    continue
+                
+                logger.info(f"Processing character: {character_name}")
+                
+                # Find character descriptions - look for surrounding context
+                char_pos = script_content.find(character_name)
+                surrounding_text = script_content[max(0, char_pos-200):min(len(script_content), char_pos+200)]
+                
+                # Look for description in surrounding text
+                description_match = re.search(rf'{character_name},\s*(.*?)(?=\n|\.|,)', surrounding_text)
+                description = description_match.group(1).strip() if description_match else f"Character from the script named {character_name}"
+                
+                # Character ID with UUID
+                character_id = str(uuid.uuid4())
+                character = {
+                    "id": character_id,
+                    "name": character_name,
+                    "description": description,
+                    "appearance": "Appearance details extracted from script context",
+                    "traits": [],
+                    "script_id": script_id
+                }
+                
+                # Generate image prompt for the character
+                character["image_prompt"] = generate_character_prompt(character)
+                
+                characters[character_name] = character
+                
+                # Store in database
+                logger.info(f"Saving character: {character['name']}")
+                result = await db.characters.insert_one(character)
+                logger.info(f"Character saved with ID: {character_id}")
+                
+                # Update scenes where this character appears
+                for scene in scenes:
+                    if character_name in scene["description"]:
+                        scene["characters"].append(character_name)
+                        await db.scenes.update_one(
+                            {"id": scene["id"]}, 
+                            {"$set": {"characters": scene["characters"]}}
+                        )
+            except Exception as e:
+                logger.error(f"Error processing character {match.group(1) if match.group(1) else 'unknown'}: {str(e)}")
+        
+        # Extract shots (simplified - in real scripts, shots are more complex)
+        for scene in scenes:
+            try:
+                # Look for potential shot descriptions
+                shot_descriptions = re.findall(r'(?:ANGLE ON|CLOSE ON|WIDE SHOT|POV)(.*?)(?=\n\n|$)', scene["description"], re.MULTILINE)
+                
+                for i, shot_desc in enumerate(shot_descriptions):
+                    shot_id = str(uuid.uuid4())
+                    shot = {
+                        "id": shot_id,
+                        "shot_number": f"{scene['scene_number']}-{i+1}",
+                        "description": shot_desc.strip(),
+                        "camera_angle": extract_camera_angle(shot_desc),
+                        "scene_id": scene["id"],
+                        "script_id": script_id
+                    }
+                    
+                    # Generate image prompt for the shot
+                    shot["image_prompt"] = generate_shot_prompt(shot, scene)
+                    
+                    # Store in database
+                    logger.info(f"Saving shot: {shot['shot_number']}")
+                    result = await db.shots.insert_one(shot)
+                    logger.info(f"Shot saved with ID: {shot_id}")
+            except Exception as e:
+                logger.error(f"Error processing shots for scene {scene.get('id')}: {str(e)}")
+        
+        # Mark script as parsed
+        await db.scripts.update_one(
+            {"id": script_id},
+            {"$set": {"parsed": True}}
+        )
+        
+        return {
+            "scenes": len(scenes),
+            "characters": len(characters)
         }
+    except Exception as e:
+        logger.error(f"Error in parse_script: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Script parsing failed: {str(e)}")
         
-        # Generate image prompt for the scene
-        scene["image_prompt"] = generate_scene_prompt(scene)
-        
-        scenes.append(scene)
-        
-        # Store in database
-        await db.scenes.insert_one(scene)
-    
-    # Extract characters
-    characters = {}
-    character_matches = re.finditer(character_pattern, script_content, re.MULTILINE)
-    
-    for match in character_matches:
-        character_name = match.group(1).strip()
-        
-        if character_name not in characters and not character_name.isupper():
-            # Skip scene headings and other all-caps text that aren't characters
-            
-            # Find character descriptions - assume they might be near first mention
-            char_pos = script_content.find(character_name)
-            description_area = script_content[max(0, char_pos-200):char_pos+200]
-            
-            # Simple description extraction - could be enhanced with NLP
-            description = f"Character from the script named {character_name}"
-            
-            character = {
-                "id": str(uuid.uuid4()),
-                "name": character_name,
-                "description": description,
-                "appearance": "Appearance details not specified in script",
-                "traits": [],
-                "script_id": script_id
-            }
-            
-            # Generate image prompt for the character
-            character["image_prompt"] = generate_character_prompt(character)
-            
-            characters[character_name] = character
-            
-            # Store in database
-            await db.characters.insert_one(character)
-            
-            # Update scenes where this character appears
-            for scene in scenes:
-                if character_name in scene["description"]:
-                    scene["characters"].append(character_name)
-                    await db.scenes.update_one(
-                        {"id": scene["id"]}, 
-                        {"$set": {"characters": scene["characters"]}}
-                    )
-    
-    # Extract shots (simplified - in real scripts, shots are more complex)
-    for scene in scenes:
-        # Look for potential shot descriptions
-        shot_descriptions = re.findall(r'(?:ANGLE ON|CLOSE ON|WIDE SHOT|POV)(.*?)(?=\n\n)', scene["description"], re.MULTILINE)
-        
-        for i, shot_desc in enumerate(shot_descriptions):
-            shot = {
-                "id": str(uuid.uuid4()),
-                "shot_number": f"{scene['scene_number']}-{i+1}",
-                "description": shot_desc.strip(),
-                "camera_angle": extract_camera_angle(shot_desc),
-                "scene_id": scene["id"],
-                "script_id": script_id
-            }
-            
-            # Generate image prompt for the shot
-            shot["image_prompt"] = generate_shot_prompt(shot, scene)
-            
-            # Store in database
-            await db.shots.insert_one(shot)
-    
-    # Mark script as parsed
-    await db.scripts.update_one(
-        {"id": script_id},
-        {"$set": {"parsed": True}}
-    )
-    
-    return {
-        "scenes": len(scenes),
-        "characters": len(characters)
-    }
 
 def extract_camera_angle(shot_description):
     """Extract camera angle from shot description"""
