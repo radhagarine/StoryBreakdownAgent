@@ -1,0 +1,35 @@
+services:
+  # Backend API service
+  - type: web
+    name: storybreakdown-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT --workers 1 --reload
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: MONGO_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: FRONTEND_URL
+        value: https://storybreakdown-frontend.onrender.com
+
+  # Frontend React application
+  - type: web
+    name: storybreakdown-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: cd frontend && npm i
+    startCommand: cd frontend && PORT=$PORT npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 16.20.0
+      - key: REACT_APP_BACKEND_URL
+        fromService:
+          name: storybreakdown-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
