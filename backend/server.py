@@ -23,6 +23,31 @@ import pandas as pd
 import csv
 import spacy
 import nltk
+# Add this near the top of your file, after importing nltk
+try:
+    nltk.data.find('sentiment/vader_lexicon.zip')
+except LookupError:
+    nltk.download('vader_lexicon')
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
+try:
+    nltk.data.find('taggers/averaged_perceptron_tagger')
+except LookupError:
+    nltk.download('averaged_perceptron_tagger')
+
+try:
+    nltk.data.find('chunkers/maxent_ne_chunker')
+except LookupError:
+    nltk.download('maxent_ne_chunker')
+
+try:
+    nltk.data.find('corpora/words')
+except LookupError:
+    nltk.download('words')
 from nltk.sentiment import SentimentIntensityAnalyzer
 from nltk.tokenize import sent_tokenize
 from nltk.tag import pos_tag
